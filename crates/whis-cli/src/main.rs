@@ -172,9 +172,7 @@ fn run_listen_non_linux(hotkey_str: String) -> Result<()> {
     let (hotkey_tx, hotkey_rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {
-        // Keep manager alive in this thread
-        let _manager = manager;
-
+        // receiver and hotkey_id are Send, manager stays on main thread
         loop {
             // Blocking receive from global-hotkey
             if let Ok(event) = receiver.recv() {
@@ -184,6 +182,9 @@ fn run_listen_non_linux(hotkey_str: String) -> Result<()> {
             }
         }
     });
+
+    // Keep manager alive on main thread (GlobalHotKeyManager isn't Send)
+    let _manager = manager;
 
     // Run async service in tokio runtime
     tokio::runtime::Runtime::new()?.block_on(async {
