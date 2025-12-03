@@ -2,6 +2,24 @@ use anyhow::{Context, Result};
 use rdev::{Event, EventType, Key, grab};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Receiver;
+
+pub struct HotkeyGuard;
+
+pub fn setup(hotkey_str: &str) -> Result<(Receiver<()>, HotkeyGuard)> {
+    let hotkey = Hotkey::parse(hotkey_str)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    std::thread::spawn(move || {
+        if let Err(e) = listen_for_hotkey(hotkey, move || {
+            let _ = tx.send(());
+        }) {
+            eprintln!("Hotkey error: {e}");
+        }
+    });
+
+    Ok((rx, HotkeyGuard))
+}
 
 /// Represents a hotkey combination (modifiers + key)
 #[derive(Debug, Clone)]

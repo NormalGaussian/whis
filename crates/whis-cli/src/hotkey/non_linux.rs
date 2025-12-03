@@ -4,45 +4,45 @@
 
 use anyhow::{Context, Result};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, hotkey::HotKey};
+use std::sync::mpsc::Receiver;
 
-/// Manager that owns the GlobalHotKeyManager and tracks the registered hotkey
-pub struct HotkeyManager {
+pub struct HotkeyGuard {
     _manager: GlobalHotKeyManager,
-    pub hotkey_id: u32,
 }
 
-impl HotkeyManager {
-    /// Create a new hotkey manager and register the hotkey
-    ///
-    /// IMPORTANT: On macOS, this MUST be called from the main thread.
-    pub fn new(hotkey_str: &str) -> Result<Self> {
-        let converted = convert_to_global_hotkey_format(hotkey_str)?;
-        let hotkey: HotKey = converted
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Invalid hotkey '{}': {:?}", hotkey_str, e))?;
+pub fn setup(hotkey_str: &str) -> Result<(Receiver<()>, HotkeyGuard)> {
+    let converted = convert_to_global_hotkey_format(hotkey_str)?;
+    let hotkey: HotKey = converted
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid hotkey '{}': {:?}", hotkey_str, e))?;
 
-        let manager = GlobalHotKeyManager::new()
-            .map_err(|e| anyhow::anyhow!("Failed to create hotkey manager: {:?}", e))?;
+    let manager = GlobalHotKeyManager::new()
+        .map_err(|e| anyhow::anyhow!("Failed to create hotkey manager: {:?}", e))?;
 
-        manager.register(hotkey.clone()).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to register hotkey '{}': {:?}\n\n\
-                This may mean the hotkey is already registered by another application.",
-                hotkey_str,
-                e
-            )
-        })?;
+    manager.register(hotkey.clone()).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to register hotkey '{}': {:?}\n\n\
+            This may mean the hotkey is already registered by another application.",
+            hotkey_str,
+            e
+        )
+    })?;
 
-        Ok(Self {
-            _manager: manager,
-            hotkey_id: hotkey.id(),
-        })
-    }
+    let receiver = GlobalHotKeyEvent::receiver().clone();
+    let hotkey_id = hotkey.id();
+    let (tx, rx) = std::sync::mpsc::channel();
 
-    /// Get the event receiver for hotkey events
-    pub fn receiver(&self) -> &crossbeam_channel::Receiver<GlobalHotKeyEvent> {
-        GlobalHotKeyEvent::receiver()
-    }
+    std::thread::spawn(move || {
+        loop {
+            if let Ok(event) = receiver.recv() {
+                if event.id() == hotkey_id {
+                    let _ = tx.send(());
+                }
+            }
+        }
+    });
+
+    Ok((rx, HotkeyGuard { _manager: manager }))
 }
 
 /// Convert our hotkey format to global-hotkey format
