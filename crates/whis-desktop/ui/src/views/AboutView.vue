@@ -25,7 +25,7 @@ defineProps<{
 
       <ul class="about-features">
         <li><span class="marker">[*]</span> Press shortcut, speak, release</li>
-        <li><span class="marker">[*]</span> Whisper-powered transcription</li>
+        <li><span class="marker">[*]</span> Multi-provider transcription</li>
         <li><span class="marker">[*]</span> Auto-copied to clipboard</li>
       </ul>
 

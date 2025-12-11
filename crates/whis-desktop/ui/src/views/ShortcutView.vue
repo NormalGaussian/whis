@@ -19,7 +19,6 @@ const props = defineProps<{
   currentShortcut: string;
   portalShortcut: string | null;
   portalBindError: string | null;
-  apiKey: string;
 }>();
 
 const emit = defineEmits<{
@@ -90,10 +89,19 @@ async function resetAndRestart() {
 
 async function saveShortcut() {
   try {
+    // Get current settings and only update shortcut
+    const currentSettings = await invoke<{
+      shortcut: string;
+      provider: string;
+      language: string | null;
+      openai_api_key: string | null;
+      mistral_api_key: string | null;
+    }>('get_settings');
+
     const result = await invoke<SaveResult>('save_settings', {
       settings: {
+        ...currentSettings,
         shortcut: props.currentShortcut,
-        openai_api_key: props.apiKey || null
       }
     });
     if (result.needs_restart) {

@@ -6,6 +6,6 @@ pub mod transcribe;
 
 pub use audio::{AudioChunk, AudioRecorder, RecordingData, RecordingOutput};
 pub use clipboard::copy_to_clipboard;
-pub use config::ApiConfig;
+pub use config::TranscriptionProvider;
 pub use settings::Settings;
-pub use transcribe::{ChunkTranscription, parallel_transcribe, transcribe_audio};
+pub use transcribe::{parallel_transcribe, transcribe_audio, ChunkTranscription};

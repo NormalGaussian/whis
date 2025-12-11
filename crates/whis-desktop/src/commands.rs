@@ -2,7 +2,6 @@ use crate::settings::Settings;
 use crate::shortcuts::ShortcutBackendInfo;
 use crate::state::{AppState, RecordingState};
 use tauri::{AppHandle, State};
-use whis_core::ApiConfig;
 
 #[derive(serde::Serialize)]
 pub struct StatusResponse {
@@ -16,18 +15,21 @@ pub struct SaveSettingsResponse {
 }
 
 #[tauri::command]
-pub async fn is_api_configured() -> Result<bool, String> {
-    ApiConfig::from_env().map(|_| true).map_err(|e| e.to_string())
+pub async fn is_api_configured(state: State<'_, AppState>) -> Result<bool, String> {
+    let settings = state.settings.lock().unwrap();
+    Ok(settings.has_api_key())
 }
 
 #[tauri::command]
 pub async fn get_status(state: State<'_, AppState>) -> Result<StatusResponse, String> {
     let current_state = *state.state.lock().unwrap();
 
-    // Check if API key is configured (either in settings or already loaded)
-    let config_valid = state.api_config.lock().unwrap().is_some()
-        || state.settings.lock().unwrap().openai_api_key.is_some()
-        || std::env::var("OPENAI_API_KEY").is_ok();
+    // Check if API key is configured for the current provider
+    let config_valid = {
+        let has_cached_config = state.transcription_config.lock().unwrap().is_some();
+        let settings = state.settings.lock().unwrap();
+        has_cached_config || settings.has_api_key()
+    };
 
     Ok(StatusResponse {
         state: match current_state {
@@ -96,10 +98,13 @@ pub async fn save_settings(
     settings: Settings,
 ) -> Result<SaveSettingsResponse, String> {
     // Check what changed
-    let (api_key_changed, shortcut_changed) = {
+    let (config_changed, shortcut_changed) = {
         let current = state.settings.lock().unwrap();
         (
-            current.openai_api_key != settings.openai_api_key,
+            current.provider != settings.provider
+                || current.openai_api_key != settings.openai_api_key
+                || current.mistral_api_key != settings.mistral_api_key
+                || current.language != settings.language,
             current.shortcut != settings.shortcut,
         )
     };
@@ -110,9 +115,9 @@ pub async fn save_settings(
         state_settings.save().map_err(|e| e.to_string())?;
     }
 
-    // Clear cached API config if API key changed
-    if api_key_changed {
-        *state.api_config.lock().unwrap() = None;
+    // Clear cached transcription config if provider or API key changed
+    if config_changed {
+        *state.transcription_config.lock().unwrap() = None;
     }
 
     // Only update shortcut if it actually changed
@@ -127,7 +132,7 @@ pub async fn save_settings(
 }
 
 #[tauri::command]
-pub fn validate_api_key(api_key: String) -> Result<bool, String> {
+pub fn validate_openai_api_key(api_key: String) -> Result<bool, String> {
     // Validate format: OpenAI keys start with "sk-"
     if api_key.is_empty() {
         return Ok(true); // Empty is valid (will fall back to env var)
@@ -135,6 +140,22 @@ pub fn validate_api_key(api_key: String) -> Result<bool, String> {
 
     if !api_key.starts_with("sk-") {
         return Err("Invalid key format. OpenAI keys start with 'sk-'".to_string());
+    }
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn validate_mistral_api_key(api_key: String) -> Result<bool, String> {
+    // Empty is valid (will fall back to env var)
+    if api_key.is_empty() {
+        return Ok(true);
+    }
+
+    // Basic validation: Mistral keys should be reasonably long
+    let trimmed = api_key.trim();
+    if trimmed.len() < 20 {
+        return Err("Invalid Mistral API key: key appears too short".to_string());
     }
 
     Ok(true)

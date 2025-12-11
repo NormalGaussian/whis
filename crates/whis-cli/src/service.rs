@@ -4,10 +4,11 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use tokio::time::sleep;
 
+use crate::app::TranscriptionConfig;
 use crate::ipc::{IpcMessage, IpcResponse, IpcServer};
 use std::time::Duration;
 use whis_core::{
-    ApiConfig, AudioRecorder, RecordingOutput, copy_to_clipboard, parallel_transcribe,
+    AudioRecorder, RecordingOutput, TranscriptionProvider, copy_to_clipboard, parallel_transcribe,
     transcribe_audio,
 };
 
@@ -21,16 +22,20 @@ enum ServiceState {
 pub struct Service {
     state: Arc<Mutex<ServiceState>>,
     recorder: Arc<Mutex<Option<AudioRecorder>>>,
-    config: ApiConfig,
+    provider: TranscriptionProvider,
+    api_key: String,
+    language: Option<String>,
     recording_counter: Arc<Mutex<u32>>,
 }
 
 impl Service {
-    pub fn new(config: ApiConfig) -> Result<Self> {
+    pub fn new(config: TranscriptionConfig) -> Result<Self> {
         Ok(Self {
             state: Arc::new(Mutex::new(ServiceState::Idle)),
             recorder: Arc::new(Mutex::new(None)),
-            config,
+            provider: config.provider,
+            api_key: config.api_key,
+            language: config.language,
             recording_counter: Arc::new(Mutex::new(0)),
         })
     }
@@ -176,17 +181,21 @@ impl Service {
             .context("Failed to join task")??;
 
         // Transcribe based on output type
-        let api_key = self.config.openai_api_key.clone();
+        let api_key = self.api_key.clone();
+        let provider = self.provider.clone();
+        let language = self.language.clone();
         let transcription = match audio_result {
             RecordingOutput::Single(audio_data) => {
                 // Small file - use simple blocking transcription
-                tokio::task::spawn_blocking(move || transcribe_audio(&api_key, audio_data))
-                    .await
-                    .context("Failed to join task")??
+                tokio::task::spawn_blocking(move || {
+                    transcribe_audio(&provider, &api_key, language.as_deref(), audio_data)
+                })
+                .await
+                .context("Failed to join task")??
             }
             RecordingOutput::Chunked(chunks) => {
                 // Large file - use parallel async transcription
-                parallel_transcribe(&api_key, chunks, None).await?
+                parallel_transcribe(&provider, &api_key, language.as_deref(), chunks, None).await?
             }
         };
 

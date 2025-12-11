@@ -16,14 +16,15 @@
 ## Why?
 
 - **Built for AI workflows** — speak your prompt, paste to Claude/Copilot
-- **Cheap** — ~$0.006/minute via OpenAI Whisper API (no local GPU)
+- **Cheap** — ~$0.006/minute via OpenAI Whisper or Mistral Voxtral (no local GPU)
 - **Simple** — record → transcribe → clipboard
+- **Multi-provider** — choose between OpenAI Whisper or Mistral Voxtral
 
 ## Quick Start
 
 ```bash
 cargo install whis
-whis config --api-key sk-your-key-here
+whis config --openai-api-key sk-your-key-here  # or --mistral-api-key
 whis
 ```
 
@@ -44,13 +45,16 @@ whis stop                      # Stop service
 
 **Configuration:**
 ```bash
-whis config --api-key sk-...   # Save API key
-whis config --show             # View current settings
+whis config --openai-api-key sk-...   # Save OpenAI API key
+whis config --mistral-api-key ...     # Save Mistral API key
+whis config --provider mistral        # Switch to Mistral Voxtral
+whis config --language en             # Set language hint (ISO-639-1)
+whis config --show                    # View current settings
 ```
 
 ## Requirements
 
-- [OpenAI API key](https://platform.openai.com/api-keys)
+- API key from [OpenAI](https://platform.openai.com/api-keys) or [Mistral](https://console.mistral.ai/api-keys)
 - FFmpeg (`sudo apt install ffmpeg` or `brew install ffmpeg`)
 - Linux (X11/Wayland) or macOS
 

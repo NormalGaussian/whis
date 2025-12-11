@@ -10,7 +10,10 @@ import AboutView from './views/AboutView.vue';
 
 interface Settings {
   shortcut: string;
+  provider: 'openai' | 'mistral';
+  language: string | null;
   openai_api_key: string | null;
+  mistral_api_key: string | null;
 }
 
 interface BackendInfo {
@@ -28,12 +31,15 @@ const activeSection = ref<Section>('home');
 const currentShortcut = ref("Ctrl+Shift+R");
 const portalShortcut = ref<string | null>(null);
 const portalBindError = ref<string | null>(null);
-const apiKey = ref("");
+const provider = ref<'openai' | 'mistral'>('openai');
+const language = ref<string | null>(null);
+const openaiApiKey = ref("");
+const mistralApiKey = ref("");
 const backendInfo = ref<BackendInfo | null>(null);
 const loaded = ref(false);
 
 // App info
-const appVersion = "0.5.0";
+const appVersion = "0.5.8";
 const appRepo = "https://github.com/frankdierolf/whis";
 const appSite = "https://whis.ink";
 
@@ -44,7 +50,10 @@ async function loadSettings() {
   try {
     const settings = await invoke<Settings>('get_settings');
     currentShortcut.value = settings.shortcut;
-    apiKey.value = settings.openai_api_key || '';
+    provider.value = settings.provider || 'openai';
+    language.value = settings.language;
+    openaiApiKey.value = settings.openai_api_key || '';
+    mistralApiKey.value = settings.mistral_api_key || '';
   } catch (e) {
     console.error("Failed to load settings:", e);
   }
@@ -131,7 +140,7 @@ onMounted(async () => {
             @click="activeSection = 'api-key'"
           >
             <span class="nav-marker">{{ activeSection === 'api-key' ? '>' : ' ' }}</span>
-            <span>api keys</span>
+            <span>settings</span>
           </button>
 
           <button
@@ -172,15 +181,21 @@ onMounted(async () => {
           :current-shortcut="currentShortcut"
           :portal-shortcut="portalShortcut"
           :portal-bind-error="portalBindError"
-          :api-key="apiKey"
           @update:current-shortcut="currentShortcut = $event"
           @update:portal-shortcut="portalShortcut = $event"
         />
 
         <ApiKeyView
           v-if="activeSection === 'api-key'"
-          v-model="apiKey"
           :current-shortcut="currentShortcut"
+          :provider="provider"
+          :language="language"
+          :openai-api-key="openaiApiKey"
+          :mistral-api-key="mistralApiKey"
+          @update:provider="provider = $event"
+          @update:language="language = $event"
+          @update:openai-api-key="openaiApiKey = $event"
+          @update:mistral-api-key="mistralApiKey = $event"
         />
 
         <AboutView

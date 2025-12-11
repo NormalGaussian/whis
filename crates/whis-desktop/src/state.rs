@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 use tauri::menu::MenuItem;
-use whis_core::{AudioRecorder, ApiConfig};
+use whis_core::{AudioRecorder, TranscriptionProvider};
 use crate::settings::Settings;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -10,10 +10,17 @@ pub enum RecordingState {
     Transcribing,
 }
 
+/// Cached transcription configuration (provider + API key + language)
+pub struct TranscriptionConfig {
+    pub provider: TranscriptionProvider,
+    pub api_key: String,
+    pub language: Option<String>,
+}
+
 pub struct AppState {
     pub state: Mutex<RecordingState>,
     pub recorder: Mutex<Option<AudioRecorder>>,
-    pub api_config: Mutex<Option<ApiConfig>>,
+    pub transcription_config: Mutex<Option<TranscriptionConfig>>,
     pub record_menu_item: Mutex<Option<MenuItem<tauri::Wry>>>,
     pub settings: Mutex<Settings>,
     /// The actual shortcut binding from the XDG Portal (Wayland only)
@@ -29,7 +36,7 @@ impl AppState {
         Self {
             state: Mutex::new(RecordingState::Idle),
             recorder: Mutex::new(None),
-            api_config: Mutex::new(None),
+            transcription_config: Mutex::new(None),
             record_menu_item: Mutex::new(None),
             settings: Mutex::new(settings),
             portal_shortcut: Mutex::new(None),

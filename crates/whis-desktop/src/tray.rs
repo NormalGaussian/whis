@@ -1,12 +1,12 @@
-use crate::state::{AppState, RecordingState};
+use crate::state::{AppState, RecordingState, TranscriptionConfig};
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, WebviewWindowBuilder, WebviewUrl,
+    AppHandle, Emitter, Manager, WebviewWindowBuilder, WebviewUrl,
 };
 use whis_core::{
-    copy_to_clipboard, parallel_transcribe, transcribe_audio, AudioRecorder, RecordingOutput, ApiConfig,
+    copy_to_clipboard, parallel_transcribe, transcribe_audio, AudioRecorder, RecordingOutput,
 };
 
 // Static icons for each state (pre-loaded at compile time)
@@ -139,22 +139,25 @@ fn toggle_recording(app: AppHandle) {
 }
 
 fn start_recording_sync(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    // Load API config if not already loaded
+    // Load transcription config if not already loaded
     {
-        let mut config_guard = state.api_config.lock().unwrap();
+        let mut config_guard = state.transcription_config.lock().unwrap();
         if config_guard.is_none() {
-            // Try settings first, then environment variable
-            let api_key = {
-                let settings = state.settings.lock().unwrap();
-                settings.openai_api_key.clone()
-            }
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            let settings = state.settings.lock().unwrap();
+            let provider = settings.provider.clone();
 
-            let api_key = api_key.ok_or(
-                "No API key configured. Add it in Settings > API Keys.",
-            )?;
+            // Get API key using the helper method
+            let api_key = settings
+                .get_api_key()
+                .ok_or_else(|| format!("No {} API key configured. Add it in Settings.", provider))?;
 
-            *config_guard = Some(ApiConfig { openai_api_key: api_key });
+            let language = settings.language.clone();
+
+            *config_guard = Some(TranscriptionConfig {
+                provider,
+                api_key,
+                language,
+            });
         }
     }
 
@@ -182,6 +185,20 @@ async fn stop_and_transcribe(app: &AppHandle) -> Result<(), String> {
     update_tray(app, RecordingState::Transcribing);
     println!("Transcribing...");
 
+    // Run transcription with guaranteed state cleanup on any error
+    let result = do_transcription(app, &state).await;
+
+    // Always reset state, regardless of success or failure
+    {
+        *state.state.lock().unwrap() = RecordingState::Idle;
+    }
+    update_tray(app, RecordingState::Idle);
+
+    result
+}
+
+/// Inner transcription logic - extracted so we can guarantee state cleanup
+async fn do_transcription(app: &AppHandle, state: &AppState) -> Result<(), String> {
     // Get recorder and config
     let mut recorder = state
         .recorder
@@ -190,18 +207,17 @@ async fn stop_and_transcribe(app: &AppHandle) -> Result<(), String> {
         .take()
         .ok_or("No active recording")?;
 
-    let api_key = state
-        .api_config
-        .lock()
-        .unwrap()
-        .as_ref()
-        .ok_or("API config not loaded")?
-        .openai_api_key
-        .clone();
+    let (provider, api_key, language) = {
+        let config = state.transcription_config.lock().unwrap();
+        let config_ref = config.as_ref().ok_or("Transcription config not loaded")?;
+        (
+            config_ref.provider.clone(),
+            config_ref.api_key.clone(),
+            config_ref.language.clone(),
+        )
+    };
 
     // Finalize recording (synchronous file encoding)
-    // Note: AudioRecorder might need to be Send to be moved into async block?
-    // It is likely Send since it's in a Mutex.
     let audio_result = recorder.finalize_recording().map_err(|e| e.to_string())?;
 
     // Transcribe
@@ -209,17 +225,19 @@ async fn stop_and_transcribe(app: &AppHandle) -> Result<(), String> {
         // transcribe_audio is synchronous (blocking HTTP), so we should wrap it in spawn_blocking
         // to avoid blocking the async runtime
         RecordingOutput::Single(data) => {
+            let provider = provider.clone();
             let api_key = api_key.clone();
+            let language = language.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                transcribe_audio(&api_key, data)
+                transcribe_audio(&provider, &api_key, language.as_deref(), data)
             })
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?
-        },
+        }
         RecordingOutput::Chunked(chunks) => {
             // parallel_transcribe is async, so we can await it directly
-            parallel_transcribe(&api_key, chunks, None)
+            parallel_transcribe(&provider, &api_key, language.as_deref(), chunks, None)
                 .await
                 .map_err(|e| e.to_string())?
         }
@@ -228,13 +246,10 @@ async fn stop_and_transcribe(app: &AppHandle) -> Result<(), String> {
     // Copy to clipboard
     copy_to_clipboard(&transcription).map_err(|e| e.to_string())?;
 
-    // Reset state
-    {
-        *state.state.lock().unwrap() = RecordingState::Idle;
-    }
-    update_tray(app, RecordingState::Idle);
-
     println!("Done: {}", &transcription[..transcription.len().min(50)]);
+
+    // Emit event to frontend so it knows transcription completed
+    let _ = app.emit("transcription-complete", &transcription);
 
     Ok(())
 }

@@ -13,8 +13,8 @@ pub fn run() -> Result<()> {
     // Check if FFmpeg is available
     app::ensure_ffmpeg_installed()?;
 
-    // Load API configuration
-    let config = app::load_api_config()?;
+    // Load transcription configuration (provider + API key)
+    let config = app::load_transcription_config()?;
 
     // Create recorder and start recording
     let mut recorder = AudioRecorder::new()?;
@@ -34,7 +34,12 @@ pub fn run() -> Result<()> {
             print!("\rTranscribing...                        \n");
             io::stdout().flush()?;
 
-            match transcribe_audio(&config.openai_api_key, audio_data) {
+            match transcribe_audio(
+                &config.provider,
+                &config.api_key,
+                config.language.as_deref(),
+                audio_data,
+            ) {
                 Ok(text) => text,
                 Err(e) => {
                     eprintln!("Transcription error: {e}");
@@ -48,7 +53,15 @@ pub fn run() -> Result<()> {
             io::stdout().flush()?;
 
             runtime.block_on(async {
-                match parallel_transcribe(&config.openai_api_key, chunks, None).await {
+                match parallel_transcribe(
+                    &config.provider,
+                    &config.api_key,
+                    config.language.as_deref(),
+                    chunks,
+                    None,
+                )
+                .await
+                {
                     Ok(text) => text,
                     Err(e) => {
                         eprintln!("Transcription error: {e}");

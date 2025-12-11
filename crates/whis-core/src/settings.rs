@@ -3,18 +3,31 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::config::TranscriptionProvider;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub shortcut: String,
     #[serde(default)]
+    pub provider: TranscriptionProvider,
+    /// Language hint for transcription (ISO-639-1 code, e.g., "en", "de", "fr")
+    /// None = auto-detect, Some("en") = English, etc.
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
     pub openai_api_key: Option<String>,
+    #[serde(default)]
+    pub mistral_api_key: Option<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             shortcut: "Ctrl+Shift+R".to_string(),
+            provider: TranscriptionProvider::default(),
+            language: None, // Auto-detect
             openai_api_key: None,
+            mistral_api_key: None,
         }
     }
 }
@@ -26,6 +39,25 @@ impl Settings {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("whis")
             .join("settings.json")
+    }
+
+    /// Get the API key for the current provider, falling back to environment variables
+    pub fn get_api_key(&self) -> Option<String> {
+        match &self.provider {
+            TranscriptionProvider::OpenAI => self
+                .openai_api_key
+                .clone()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
+            TranscriptionProvider::Mistral => self
+                .mistral_api_key
+                .clone()
+                .or_else(|| std::env::var("MISTRAL_API_KEY").ok()),
+        }
+    }
+
+    /// Check if an API key is configured for the current provider
+    pub fn has_api_key(&self) -> bool {
+        self.get_api_key().is_some()
     }
 
     /// Load settings from disk

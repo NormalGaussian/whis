@@ -15,7 +15,13 @@ fn main() -> Result<()> {
         Some(args::Commands::Listen { hotkey }) => commands::listen::run(hotkey),
         Some(args::Commands::Stop) => commands::stop::run(),
         Some(args::Commands::Status) => commands::status::run(),
-        Some(args::Commands::Config { api_key, show }) => commands::config::run(api_key, show),
+        Some(args::Commands::Config {
+            openai_api_key,
+            mistral_api_key,
+            provider,
+            language,
+            show,
+        }) => commands::config::run(openai_api_key, mistral_api_key, provider, language, show),
         None => commands::record_once::run(),
     }
 }

@@ -119,7 +119,7 @@ onUnmounted(() => {
       <!-- Only show notice when something needs attention -->
       <div v-if="!status.config_valid" class="notice">
         <span class="notice-marker">[!]</span>
-        <p>Add your OpenAI API key in <strong>api keys</strong> to start transcribing.</p>
+        <p>Configure your API key in <strong>settings</strong> to start transcribing.</p>
       </div>
 
       <div v-else-if="!displayShortcut" class="notice">

@@ -1,17 +1,32 @@
-use anyhow::{Context, Result};
-use std::env;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
-pub struct ApiConfig {
-    pub openai_api_key: String,
+/// Available transcription providers
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptionProvider {
+    #[default]
+    OpenAI,
+    Mistral,
 }
 
-impl ApiConfig {
-    pub fn from_env() -> Result<Self> {
-        dotenvy::dotenv().ok(); // Load .env file if it exists
+impl fmt::Display for TranscriptionProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TranscriptionProvider::OpenAI => write!(f, "openai"),
+            TranscriptionProvider::Mistral => write!(f, "mistral"),
+        }
+    }
+}
 
-        let openai_api_key = env::var("OPENAI_API_KEY")
-            .context("OPENAI_API_KEY not found. Please set it in .env file or environment")?;
+impl std::str::FromStr for TranscriptionProvider {
+    type Err = String;
 
-        Ok(ApiConfig { openai_api_key })
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "openai" => Ok(TranscriptionProvider::OpenAI),
+            "mistral" => Ok(TranscriptionProvider::Mistral),
+            _ => Err(format!("Unknown provider: {}. Use 'openai' or 'mistral'", s)),
+        }
     }
 }

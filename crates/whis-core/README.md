@@ -16,7 +16,7 @@
 ## Features
 
 - **Audio recording** — capture microphone input via cpal
-- **Transcription** — send audio to OpenAI Whisper API
+- **Multi-provider transcription** — OpenAI Whisper or Mistral Voxtral
 - **Parallel processing** — split long recordings into chunks
 - **Clipboard** — copy results to system clipboard
 - **Config management** — persistent settings in `~/.config/whis/`
@@ -24,10 +24,11 @@
 ## Usage
 
 ```rust
-use whis_core::{AudioRecorder, ApiConfig, transcribe_audio, copy_to_clipboard};
+use whis_core::{AudioRecorder, TranscriptionProvider, transcribe_audio, copy_to_clipboard};
 
-// Load config from environment (OPENAI_API_KEY)
-let config = ApiConfig::from_env()?;
+// Configure provider and API key
+let provider = TranscriptionProvider::OpenAI;
+let api_key = std::env::var("OPENAI_API_KEY")?;
 
 // Record audio
 let mut recorder = AudioRecorder::new()?;
@@ -36,7 +37,7 @@ recorder.start_recording()?;
 let output = recorder.finalize_recording()?;
 
 // Transcribe (for single chunk)
-let text = transcribe_audio(&config.openai_api_key, audio_data)?;
+let text = transcribe_audio(&provider, &api_key, None, audio_data)?;
 
 // Copy to clipboard
 copy_to_clipboard(&text)?;
@@ -47,10 +48,10 @@ copy_to_clipboard(&text)?;
 | Module | Description |
 |--------|-------------|
 | `audio` | `AudioRecorder`, `AudioChunk`, recording utilities |
-| `transcribe` | Whisper API integration, parallel chunked transcription |
+| `transcribe` | OpenAI Whisper and Mistral Voxtral API integration, parallel chunked transcription |
 | `clipboard` | System clipboard operations |
-| `config` | API key and settings persistence |
-| `settings` | User preferences (hotkeys, etc.) |
+| `config` | `TranscriptionProvider` enum |
+| `settings` | User preferences (provider, API keys, language, hotkeys) |
 
 ## License
 
