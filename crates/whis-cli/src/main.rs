@@ -7,9 +7,13 @@ mod service;
 
 use anyhow::Result;
 use clap::Parser;
+use whis_core::set_verbose;
 
 fn main() -> Result<()> {
     let cli = args::Cli::parse();
+
+    // Enable verbose logging if requested
+    set_verbose(cli.verbose);
 
     match cli.command {
         Some(args::Commands::Listen { hotkey }) => commands::listen::run(hotkey),

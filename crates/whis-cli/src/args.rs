@@ -6,6 +6,10 @@ use clap::{Parser, Subcommand};
 #[command(about = "Voice-to-text CLI using OpenAI Whisper or Mistral Voxtral")]
 #[command(after_help = "Run 'whis' without arguments to record once (press Enter to stop).")]
 pub struct Cli {
+    /// Enable verbose output for debugging (audio device, FFmpeg, clipboard, etc.)
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

@@ -7,6 +7,9 @@ use tokio::sync::Semaphore;
 use crate::audio::AudioChunk;
 use crate::config::TranscriptionProvider;
 
+#[allow(unused_imports)]
+use crate::verbose;
+
 /// Maximum concurrent API requests
 const MAX_CONCURRENT_REQUESTS: usize = 3;
 /// Maximum words to search for overlap between chunks
@@ -61,14 +64,28 @@ pub fn transcribe_audio(
     language: Option<&str>,
     audio_data: Vec<u8>,
 ) -> Result<String> {
-    match provider {
+    crate::verbose!("Transcribing audio: {} bytes", audio_data.len());
+    crate::verbose!("Provider: {:?}", provider);
+    crate::verbose!("Language hint: {:?}", language);
+
+    let result = match provider {
         TranscriptionProvider::OpenAI => transcribe_openai(api_key, language, audio_data),
         TranscriptionProvider::Mistral => transcribe_mistral(api_key, language, audio_data),
+    };
+
+    match &result {
+        Ok(text) => crate::verbose!("Transcription result: {} chars", text.len()),
+        Err(e) => crate::verbose!("Transcription error: {e}"),
     }
+
+    result
 }
 
 /// Transcribe using OpenAI Whisper API
 fn transcribe_openai(api_key: &str, language: Option<&str>, audio_data: Vec<u8>) -> Result<String> {
+    crate::verbose!("OpenAI API: {}", OPENAI_API_URL);
+    crate::verbose!("Model: {}", OPENAI_MODEL);
+
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(API_TIMEOUT_SECS))
         .build()
@@ -86,6 +103,7 @@ fn transcribe_openai(api_key: &str, language: Option<&str>, audio_data: Vec<u8>)
         form = form.text("language", lang.to_string());
     }
 
+    crate::verbose!("Sending request to OpenAI...");
     let response = client
         .post(OPENAI_API_URL)
         .header("Authorization", format!("Bearer {api_key}"))
@@ -93,11 +111,14 @@ fn transcribe_openai(api_key: &str, language: Option<&str>, audio_data: Vec<u8>)
         .send()
         .context("Failed to send request to OpenAI API")?;
 
+    crate::verbose!("Response status: {}", response.status());
+
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response
             .text()
             .unwrap_or_else(|_| "Unknown error".to_string());
+        crate::verbose!("API error response: {error_text}");
         anyhow::bail!("OpenAI API error ({status}): {error_text}");
     }
 
@@ -110,6 +131,9 @@ fn transcribe_openai(api_key: &str, language: Option<&str>, audio_data: Vec<u8>)
 
 /// Transcribe using Mistral Voxtral API
 fn transcribe_mistral(api_key: &str, language: Option<&str>, audio_data: Vec<u8>) -> Result<String> {
+    crate::verbose!("Mistral API: {}", MISTRAL_API_URL);
+    crate::verbose!("Model: {}", MISTRAL_MODEL);
+
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(API_TIMEOUT_SECS))
         .build()
@@ -127,6 +151,7 @@ fn transcribe_mistral(api_key: &str, language: Option<&str>, audio_data: Vec<u8>
         form = form.text("language", lang.to_string());
     }
 
+    crate::verbose!("Sending request to Mistral...");
     let response = client
         .post(MISTRAL_API_URL)
         .header("Authorization", format!("Bearer {api_key}"))
@@ -134,11 +159,14 @@ fn transcribe_mistral(api_key: &str, language: Option<&str>, audio_data: Vec<u8>
         .send()
         .context("Failed to send request to Mistral API")?;
 
+    crate::verbose!("Response status: {}", response.status());
+
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response
             .text()
             .unwrap_or_else(|_| "Unknown error".to_string());
+        crate::verbose!("API error response: {error_text}");
         anyhow::bail!("Mistral API error ({status}): {error_text}");
     }
 

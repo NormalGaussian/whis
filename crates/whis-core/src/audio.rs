@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
 
+use crate::verbose;
+
 /// Threshold for chunking (files larger than this get split)
 const CHUNK_THRESHOLD_BYTES: usize = 20 * 1024 * 1024; // 20 MB
 /// Duration of each chunk in seconds
@@ -55,9 +57,26 @@ impl AudioRecorder {
 
     pub fn start_recording(&mut self) -> Result<()> {
         let host = cpal::default_host();
+
+        if verbose::is_verbose() {
+            crate::verbose!("Audio host: {:?}", host.id());
+
+            // List all available input devices
+            if let Ok(devices) = host.input_devices() {
+                crate::verbose!("Available input devices:");
+                for (i, dev) in devices.enumerate() {
+                    let name = dev.name().unwrap_or_else(|_| "<unknown>".to_string());
+                    crate::verbose!("  [{i}] {name}");
+                }
+            }
+        }
+
         let device = host
             .default_input_device()
             .context("No input device available")?;
+
+        let device_name = device.name().unwrap_or_else(|_| "<unknown>".to_string());
+        crate::verbose!("Selected input device: {device_name}");
 
         let config = device
             .default_input_config()
@@ -65,6 +84,9 @@ impl AudioRecorder {
 
         self.sample_rate = config.sample_rate().0;
         self.channels = config.channels();
+
+        crate::verbose!("Audio config: {} Hz, {} channel(s), format: {:?}",
+            self.sample_rate, self.channels, config.sample_format());
 
         let samples = self.samples.clone();
         samples.lock().unwrap().clear();
@@ -83,6 +105,7 @@ impl AudioRecorder {
         };
 
         stream.play()?;
+        crate::verbose!("Audio stream started");
 
         // Store stream to keep it alive; dropping it will release the microphone
         self.stream = Some(stream);
@@ -120,6 +143,8 @@ impl AudioRecorder {
     /// Stop recording and return the recording data.
     /// The stream is dropped here, making the returned RecordingData Send-safe.
     pub fn stop_recording(&mut self) -> Result<RecordingData> {
+        crate::verbose!("Stopping audio stream...");
+
         // Drop the stream first to release the microphone
         self.stream = None;
 
@@ -130,8 +155,12 @@ impl AudioRecorder {
         };
 
         if samples.is_empty() {
+            crate::verbose!("No audio samples captured!");
             anyhow::bail!("No audio data recorded");
         }
+
+        let duration_secs = samples.len() as f32 / self.sample_rate as f32 / self.channels as f32;
+        crate::verbose!("Captured {} samples ({:.2}s of audio)", samples.len(), duration_secs);
 
         Ok(RecordingData {
             samples,
@@ -196,6 +225,8 @@ impl RecordingData {
 
     /// Convert raw f32 samples to MP3 data
     fn samples_to_mp3(&self, samples: &[f32], suffix: &str) -> Result<Vec<u8>> {
+        crate::verbose!("Converting {} samples to MP3 (suffix: {suffix})", samples.len());
+
         // Convert f32 samples to i16 for WAV format
         let i16_samples: Vec<i16> = samples
             .iter()
@@ -218,6 +249,9 @@ impl RecordingData {
         let wav_path = temp_dir.join(format!("whis_{unique_id}.wav"));
         let mp3_path = temp_dir.join(format!("whis_{unique_id}.mp3"));
 
+        crate::verbose!("Temp WAV: {}", wav_path.display());
+        crate::verbose!("Temp MP3: {}", mp3_path.display());
+
         {
             let spec = hound::WavSpec {
                 channels: self.channels,
@@ -233,21 +267,27 @@ impl RecordingData {
             writer.finalize()?;
         }
 
+        let wav_size = std::fs::metadata(&wav_path).map(|m| m.len()).unwrap_or(0);
+        crate::verbose!("WAV file created: {} bytes", wav_size);
+
         // Convert WAV to MP3 using FFmpeg
+        let ffmpeg_args = [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            wav_path.to_str().unwrap(),
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            "-y",
+            mp3_path.to_str().unwrap(),
+        ];
+        crate::verbose!("FFmpeg command: ffmpeg {}", ffmpeg_args.join(" "));
+
         let output = std::process::Command::new("ffmpeg")
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                wav_path.to_str().unwrap(),
-                "-codec:a",
-                "libmp3lame",
-                "-b:a",
-                "128k",
-                "-y",
-                mp3_path.to_str().unwrap(),
-            ])
+            .args(&ffmpeg_args)
             .output()
             .context("Failed to execute ffmpeg. Make sure ffmpeg is installed.")?;
 
@@ -257,11 +297,13 @@ impl RecordingData {
         if !output.status.success() {
             let _ = std::fs::remove_file(&mp3_path);
             let stderr = String::from_utf8_lossy(&output.stderr);
+            crate::verbose!("FFmpeg failed: {stderr}");
             anyhow::bail!("FFmpeg conversion failed: {stderr}");
         }
 
         // Read the MP3 file
         let mp3_data = std::fs::read(&mp3_path).context("Failed to read converted MP3 file")?;
+        crate::verbose!("MP3 file created: {} bytes", mp3_data.len());
 
         // Clean up the temporary MP3 file
         let _ = std::fs::remove_file(&mp3_path);
